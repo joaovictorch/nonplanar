@@ -1,0 +1,40 @@
+NONPLANAR LAB — K1 MAX
+
+1. Extraia todos os arquivos deste ZIP.
+2. Abra o arquivo ABRIR-APLICATIVO.html no Chrome, Edge, Firefox ou Safari do computador.
+   Não é preciso instalar Python, iniciar servidor ou ter conexão com a internet.
+3. A estrutura aparece automaticamente. Arraste a imagem para girar.
+4. Para mudar a estrutura, altere os campos e clique em Gerar trajetória.
+5. Após conferir a configuração da impressora, marque a caixa de verificação.
+6. Clique em Baixar G-code experimental para salvar o arquivo.
+
+CAMPOS
+Radius: raio em mm. Height envelope: altura máxima em mm.
+Wave amplitude: amplitude da onda em mm. Waves per revolution: ondas por volta.
+Nominal layer height: altura nominal de camada. Print speed: velocidade em mm/s.
+PLA nozzle temperature: temperatura do bico. Bed temperature: temperatura da mesa.
+
+PERFIL
+Creality K1 Max, bico original assumido de 0,4 mm, filamento PLA de 1,75 mm.
+Extrusor DXC informado pelo usuário: a calibração deve estar correta no firmware.
+O aplicativo não altera o firmware e não envia comandos à impressora.
+
+ANTES DE IMPRIMIR
+O resultado é uma parede cilíndrica ondulada aberta embaixo, não um vaso fechado.
+Não há importação de STL nesta versão.
+A impressão física e a folga entre peça e cabeçote NÃO foram validadas.
+Confira diâmetro do bico, calibração da extrusão, nivelamento da mesa e folga do cabeçote.
+Revise o G-code no seu visualizador habitual e acompanhe o primeiro teste pequeno.
+A inicialização faz homing e aquecimento, mas não calibra a malha da mesa.
+Prepare/escorve o bico pelo procedimento normal da impressora antes do teste.
+
+SE NÃO ABRIR
+Abra o HTML extraído com um navegador; não use o visualizador de texto nem abra de dentro do ZIP.
+A tela de configuração do ambiente na nuvem não executa o aplicativo para você.
+
+VISUALIZAÇÃO
+Objeto: mostra a forma aproximada com espessura dos cordões.
+Caminho do bico: mostra extrusão por altura e deslocamentos tracejados.
+Arraste para girar/inclinar. Use a roda do mouse ou Zoom para ampliar.
+Use Progresso da trajetória e Reproduzir/Pausar para acompanhar o bico.
+A animação não representa o tempo real nem valida colisões.

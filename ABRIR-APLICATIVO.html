@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nonplanar Lab</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui;background:#101719;color:#e3ece8}*{box-sizing:border-box}body{margin:0}header{padding:28px 5%;border-bottom:1px solid #30403e}h1{margin:8px 0;font-size:34px;letter-spacing:-1px}.tag{color:#a9df90;font-size:12px;letter-spacing:2px}p{color:#aebeb8;line-height:1.6}main{display:grid;grid-template-columns:320px 1fr;gap:24px;padding:28px 5%}section{background:#182326;border:1px solid #30403e;border-radius:16px;padding:24px}label{display:block;margin-bottom:16px;font-size:13px;color:#bacbc4}input{display:block;width:100%;padding:10px;margin-top:6px;background:#101719;color:white;border:1px solid #45544d;border-radius:6px}button{color:#142017;cursor:pointer;width:100%;padding:13px;background:#b4e897;border:0;border-radius:8px;font-weight:700;margin-top:10px}button:disabled{opacity:.4;cursor:default}canvas{width:100%;height:460px;display:block;touch-action:none}.note{font-size:13px;color:#e7c48d}.check{display:flex;gap:12px;line-height:1.5}.check input{width:auto;align-self:start}#status{min-height:45px;font-size:14px}#stats{color:#b4e897;font-size:14px}@media(max-width:800px){main{grid-template-columns:1fr}canvas{height:340px}}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap}.toolbar button{width:auto;background:#293b3d;color:#dbe7e0}.toolbar button[aria-pressed="true"]{background:#b4e897;color:#142017}.viewer{background:#0e171b;border:1px solid #34484c;border-radius:12px;overflow:hidden;margin-top:16px}.viewer canvas{height:500px}.legend{font-size:12px;padding:0 15px 12px;color:#a7bdb5}.controls{display:grid;grid-template-columns:1fr 120px;gap:20px;margin-top:16px}#position{font:13px monospace;color:#b4e897}input[type=range]{padding:0;accent-color:#b4e897}button:focus-visible{outline:3px solid #63bbff}@media(max-width:800px){.viewer canvas{height:360px}}
+</style>
+<header><div class="tag">K1 MAX / EXPERIMENTAL TOOLPATHS</div><h1>Nonplanar Lab</h1><p>Versão offline — abra no navegador, sem servidor ou instalação.</p><p>Veja a forma da peça e acompanhe o percurso do bico antes de exportar.</p></header>
+<main><section><form id="form"><h2>Cilindro ondulado</h2><div id="fields"></div><button id="generate">Gerar trajetória</button></form></section>
+<section><div class="tag">VISUALIZAÇÃO 3D</div>
+<div class="toolbar"><button id="objectMode" aria-pressed="true">Objeto</button><button id="pathMode" aria-pressed="false">Caminho do bico</button><button id="resetView">Redefinir vista</button></div>
+<div class="viewer"><canvas id="preview" aria-label="Visualização tridimensional do objeto e da trajetória; arraste para girar"></canvas><div class="legend" id="legend"></div></div>
+<p style="font-size:12px">Arraste para girar e inclinar · Role para ampliar · Forma aproximada com cordões de 0,44 mm, sem simulação física do material.</p>
+<div class="controls"><label>Progresso da trajetória: <span id="progressText">100%</span><input id="progress" type="range" min="0" max="1000" value="1000" step="1"></label><button id="play">▶ Reproduzir</button></div>
+<label>Zoom<input id="zoom" type="range" min="50" max="250" value="100"></label><div id="position" aria-live="polite"></div><div id="stats"></div><p id="status" role="status"></p><p class="note">Estrutura experimental de parede única e fundo aberto. Não importa STL. A visualização não detecta colisões; a impressão física ainda não foi validada.</p><p class="note">Perfil: K1 Max, bico de 0,4 mm, PLA de 1,75 mm e extrusor DXC. Confira calibração de extrusão, folga do cabeçote e nivelamento. A inicialização faz homing, mas não calibra a malha da mesa.</p><label class="check"><input type="checkbox" id="ack">Conferi o perfil, a calibração e a folga do cabeçote e vou supervisionar o primeiro teste.</label><button id="download" disabled>Baixar G-code experimental</button><p>Comece com a estrutura pequena padrão. Nenhum arquivo é enviado automaticamente à impressora.</p></section></main>
+<script>
+function generateLocal(values = {}) {
+  const p = {radius:30,height:15,amplitude:.3,waves:6,layer:.2,speed:15,nozzle_temp:210,bed_temp:60,...values};
+  const limits = {radius:[10,100],height:[3,100],amplitude:[0,.4],waves:[1,12],layer:[.16,.24],speed:[5,25],nozzle_temp:[190,230],bed_temp:[45,70]};
+  for (const k of Object.keys(p)) {
+    if (!limits[k]) throw Error(`Unknown parameter: ${k}`);
+    const [lo,hi] = limits[k];
+    if (!Number.isFinite(p[k]) || p[k]<lo || p[k]>hi) throw Error(`${k} must be between ${lo} and ${hi}`);
+  }
+  if (!Number.isInteger(p.waves)) throw Error('waves must be a whole number');
+  const {radius:r,height:h,amplitude:a,waves:w,layer:dz}=p, tau=2*Math.PI;
+  const turns=Math.floor((h-a-.24)/dz);
+  if(turns<5) throw Error('Height too small');
+  const slope=Math.atan((a*w+dz/tau+a/(20*tau))/r)*180/Math.PI;
+  if(slope>5) throw Error('Maximum path slope exceeds 5 degrees; reduce waves/amplitude or increase radius');
+  if(dz-a/20<.12 || dz+a/20>.28) throw Error('Unsupported spacing between neighboring turns');
+  const n=Math.max(180,Math.ceil(tau*r/.7)), points=[];
+  for(let ring=0;ring<3;ring++) for(let i=0;i<=n;i++) {
+    const theta=tau*i/n; points.push([150+r*Math.cos(theta),150+r*Math.sin(theta),.24+ring*dz]);
+  }
+  for(let i=1;i<=(turns-2)*n;i++) {
+    const t=i/n,theta=tau*t;
+    points.push([150+r*Math.cos(theta),150+r*Math.sin(theta),.24+2*dz+t*dz+a*Math.min(t/20,1)*Math.sin(w*theta)]);
+  }
+  const f=(v,n=3)=>v.toFixed(n);
+  const lines=['; Nonplanar Lab - EXPERIMENTAL K1 Max wave wall','; 0.4 mm stock nozzle, 1.75 mm PLA, 300 x 300 x 300 bed','; Open-bottom single wall; not a watertight vase or STL slicer.','; Verify toolhead clearance, clean bed and bed leveling before printing.', 'G21','G90','M83','M107',`M140 S${Math.trunc(p.bed_temp)}`,'M104 S150','G28',`M190 S${Math.trunc(p.bed_temp)}`,`M109 S${Math.trunc(p.nozzle_temp)}`,'G92 E0','G0 Z5 F600',`G0 X${f(points[0][0])} Y${f(points[0][1])} F3000`,`G0 Z${f(points[0][2])} F300`];
+  let length=0,extrusion=0,maxZ=0;
+  for(let i=1;i<points.length;i++) {
+    const q=points[i],prev=points[i-1];maxZ=Math.max(maxZ,q[2]);
+    const xy=Math.hypot(q[0]-prev[0],q[1]-prev[1]);
+    if(xy<1e-7){lines.push(`G0 Z${f(q[2])} F300`);continue;}
+    const d=Math.hypot(xy,q[2]-prev[2]),e=d*.44*dz/(Math.PI*(1.75/2)**2);
+    length+=d;extrusion+=e;
+    const feed=q[2]<.24+3*dz?Math.min(p.speed,10):p.speed;
+    lines.push(`G1 X${f(q[0])} Y${f(q[1])} Z${f(q[2])} E${f(e,5)} F${f(feed*60,0)}`);
+  }
+  lines.push('G1 E-0.5 F1200',`G0 Z${f(maxZ+5)} F600`,'M104 S0','M140 S0','M107','M84');
+  const stride=Math.max(1,Math.floor(points.length/12000));
+  return {parameters:p,points:points.filter((_,i)=>i%stride===0),gcode:lines.join('\n')+'\n',stats:{moves:points.length,filament_mm:+f(extrusion,1),estimated_minutes:+f(length/(p.speed*60),1),slope_bound_degrees:+f(slope,2)}};
+}
+if(typeof module!=='undefined') module.exports={generateLocal};
+
+
+const specs=[['radius','Raio (mm)',30,10,100,1],['height','Altura máxima (mm)',15,3,100,1],['amplitude','Amplitude da onda (mm)',.3,0,.4,.05],['waves','Ondas por volta',6,1,12,1],['layer','Altura de camada (mm)',.2,.16,.24,.01],['speed','Velocidade (mm/s)',15,5,25,1],['nozzle_temp','Temperatura do bico PLA (°C)',210,190,230,1],['bed_temp','Temperatura da mesa (°C)',60,45,70,1]];
+const $=id=>document.getElementById(id);let result=null,angle=.6,drag=null;
+for(const [name,label,value,min,max,step] of specs){const l=document.createElement('label');l.textContent=label;const i=document.createElement('input');Object.assign(i,{name,type:'number',value,min,max,step,required:true});l.append(i);$('fields').append(l)}
+function downloadState(){$('download').disabled=!result||!$('ack').checked}
+$('form').addEventListener('input',()=>{stopPlayback();segments=[];result=null;$('ack').checked=false;downloadState();$('stats').textContent='';$('status').textContent='Parâmetros alterados. Gere a trajetória novamente.';draw()});$('ack').onchange=downloadState;
+$('form').onsubmit=async e=>{e.preventDefault();result=null;downloadState();$('generate').disabled=true;$('status').textContent='Gerando…';try{const values=Object.fromEntries([...new FormData($('form'))].map(([k,v])=>[k,Number(v)]));const body=generateLocal(values);result=body;prepareView();$('stats').textContent=`${body.stats.moves.toLocaleString()} pontos · ${body.stats.filament_mm} mm de filamento · ≈ ${body.stats.estimated_minutes} min de impressão · inclinação ≤ ${body.stats.slope_bound_degrees}°`;$('status').textContent='Trajetória pronta. Inspecione antes de exportar. A animação é ilustrativa, não representa o tempo real.';draw();downloadState()}catch(err){$('status').textContent=err.message;draw()}finally{$('generate').disabled=false}};
+let mode='object',tilt=.55,zoom=1,segments=[],playing=false,lastFrame=0,animationId=0;
+function stopPlayback(){playing=false;cancelAnimationFrame(animationId);$('play').textContent='▶ Reproduzir'}
+function prepareView(){
+ stopPlayback();segments=[];let pos={};
+ for(const line of result.gcode.split('\n')){
+  if(!/^G[01] /.test(line))continue;
+  const fields={};for(const token of line.split(' ').slice(1)){if('XYZE'.includes(token[0]))fields[token[0]]=Number(token.slice(1))}
+  const next={...pos};for(const k of 'XYZ')if(k in fields)next[k]=fields[k];
+  if(['X','Y','Z'].every(k=>Number.isFinite(pos[k])&&Number.isFinite(next[k]))&&['X','Y','Z'].some(k=>pos[k]!==next[k])){
+   segments.push({a:[pos.X,pos.Y,pos.Z],b:[next.X,next.Y,next.Z],travel:!(fields.E>0)});
+  }pos=next;
+ }
+ $('progress').value=1000;draw();
+}
+function draw(){
+ const c=$('preview'),d=Math.min(devicePixelRatio||1,2);c.width=c.clientWidth*d;c.height=c.clientHeight*d;
+ const ctx=c.getContext('2d');ctx.scale(d,d);const W=c.clientWidth,H=c.clientHeight;ctx.clearRect(0,0,W,H);
+ $('progressText').textContent=(Number($('progress').value)/10).toFixed(1)+'%';
+ $('legend').textContent=mode==='object'?'Cordões com espessura aproximada · Laranja: posição do bico':'Azul → verde: altura Z · Tracejado cinza: deslocamento sem extrusão · Laranja: bico';
+ if(!result||!segments.length){$('position').textContent='Gere uma trajetória para visualizar.';return}
+ const p=result.parameters,scale=Math.min(W/(p.radius*2.9),H/(p.height+p.radius*2+15))*zoom;
+ function project(q){const x=q[0]-150,y=q[1]-150,z=q[2]-p.height/2;const u=x*Math.cos(angle)-y*Math.sin(angle),v=x*Math.sin(angle)+y*Math.cos(angle);return [W/2+u*scale,H/2+(v*Math.sin(tilt)-z*Math.cos(tilt))*scale,v*Math.cos(tilt)+z*Math.sin(tilt)]}
+ function stroke(a,b,color,width,dash=[]){ctx.strokeStyle=color;ctx.lineWidth=width;ctx.setLineDash(dash);ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke()}
+ const extent=p.radius*1.3;for(let t=-extent;t<=extent;t+=10){stroke(project([150+t,150-extent,0]),project([150+t,150+extent,0]),'#223139',.7);stroke(project([150-extent,150+t,0]),project([150+extent,150+t,0]),'#223139',.7)}
+ const count=Math.floor(Number($('progress').value)/1000*segments.length);
+ const visible=segments.slice(0,count).map(s=>({...s,pa:project(s.a),pb:project(s.b)}));
+ if(mode==='object')visible.sort((a,b)=>(a.pa[2]+a.pb[2])-(b.pa[2]+b.pb[2]));
+ ctx.lineCap='round';
+ for(const s of visible){if(mode==='object'&&s.travel)continue;
+  const shade=mode==='object'?`hsl(155,36%,${38+22*(Math.sin(Math.atan2(s.b[1]-150,s.b[0]-150)+angle)+1)/2}%)`:`hsl(${205-65*Math.min(s.b[2]/p.height,1)},75%,65%)`;
+  stroke(s.pa,s.pb,s.travel?'#819296':shade,mode==='object'?Math.max(.7,.44*scale):1,s.travel?[3,4]:[]);
+ }
+ ctx.setLineDash([]);
+ const current=count?segments[count-1].b:segments[0].a,q=project(current);
+ ctx.fillStyle='#ffba6b';ctx.beginPath();ctx.arc(q[0],q[1],5,0,2*Math.PI);ctx.fill();ctx.strokeStyle='#ffe3bd';ctx.stroke();
+ $('position').textContent=`Bico: X ${current[0].toFixed(2)} · Y ${current[1].toFixed(2)} · Z ${current[2].toFixed(3)} mm | movimento ${count.toLocaleString('pt-BR')} / ${segments.length.toLocaleString('pt-BR')}`;
+}
+for(const m of ['object','path'])$(m+'Mode').onclick=()=>{mode=m;for(const v of ['object','path'])$(v+'Mode').setAttribute('aria-pressed',String(v===m));draw()};
+$('progress').oninput=()=>{stopPlayback();draw()};
+$('zoom').oninput=()=>{zoom=Number($('zoom').value)/100;draw()};
+$('resetView').onclick=()=>{angle=.6;tilt=.55;zoom=1;$('zoom').value=100;draw()};
+$('play').onclick=()=>{if(!result||!segments.length)return;if(playing){stopPlayback();return}if(Number($('progress').value)>=1000)$('progress').value=0;playing=true;lastFrame=performance.now();$('play').textContent='Ⅱ Pausar';animationId=requestAnimationFrame(tick)};
+function tick(now){if(!playing)return;const value=Math.min(1000,Number($('progress').value)+(now-lastFrame)/30);lastFrame=now;$('progress').value=value;draw();if(value>=1000){stopPlayback();return}animationId=requestAnimationFrame(tick)}
+$('preview').onpointerdown=e=>{drag=[e.clientX,e.clientY];$('preview').setPointerCapture(e.pointerId)};
+$('preview').onpointermove=e=>{if(drag){angle+=(e.clientX-drag[0])*.01;tilt=Math.max(.08,Math.min(1.5,tilt+(e.clientY-drag[1])*.008));drag=[e.clientX,e.clientY];draw()}};
+$('preview').onpointerup=$('preview').onpointercancel=()=>drag=null;
+$('preview').addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(.5,Math.min(2.5,zoom*Math.exp(-e.deltaY*.001)));$('zoom').value=Math.round(zoom*100);draw()},{passive:false});
+window.onresize=draw;
+
+$('download').onclick=()=>{if(!result||!$('ack').checked)return;const url=URL.createObjectURL(new Blob([result.gcode],{type:'text/plain'}));const a=document.createElement('a');a.href=url;a.download='k1max-wave-wall-experimental.gcode';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+$('form').requestSubmit();
+</script></html>
